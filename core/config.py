@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 
 try:
-    # pip install python-dotenv  OR  poetry add python-dotenv
+    # Optional dependency: install via `pip install python-dotenv`
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
@@ -19,7 +19,7 @@ class Settings:
 
 
 def _load_dotenv_if_available() -> None:
-    """Load .env file if python-dotenv is installed."""
+    """Load environment variables from a .env file if python-dotenv is installed."""
     if load_dotenv is not None:
         load_dotenv()
 
