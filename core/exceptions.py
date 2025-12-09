@@ -1,5 +1,8 @@
+"""Custom exception types for the ToDo list domain."""
+
+
 class DomainError(Exception):
-    """Base class for domain / business logic errors."""
+    """Base class for domain / business-logic errors."""
 
 
 class NotFoundError(DomainError):
