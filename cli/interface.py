@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from .exceptions import DomainError, NotFoundError, ValidationError
-from .models import Task, Project
-from .services import InMemoryDatabase, ProjectService, TaskService
+from core.exceptions import DomainError, NotFoundError, ValidationError
+from core.models import Project, Task
+from core.services import ProjectService, TaskService
+from storage.memory_storage import InMemoryDatabase
 
 
 DATE_FORMAT = "%Y-%m-%d"
@@ -29,14 +30,17 @@ def _input_multiline(prompt: str) -> str:
 
 
 def _parse_date(value: str) -> Optional[datetime]:
-    """Parse a date string in DATE_FORMAT or return None if empty."""
+    """Parse a date string in DATE_FORMAT or raise ValidationError if invalid."""
     value = value.strip()
     if not value:
         return None
+
     try:
         return datetime.strptime(value, DATE_FORMAT)
-    except ValueError:
-        raise ValidationError(f"Invalid date format. Expected: {DATE_FORMAT}")
+    except ValueError as exc:
+        raise ValidationError(
+            f"Invalid date format. Expected: {DATE_FORMAT}"
+        ) from exc
 
 
 def _print_project(project: Project) -> None:
@@ -50,8 +54,8 @@ def _print_project(project: Project) -> None:
 def _print_task(task: Task) -> None:
     """Pretty-print a task to the console."""
     print(f"[{task.id}] Title: {task.title}")
-    print(f"    Status:   {task.status.value}")
-    print(f"    Deadline: {task.deadline if task.deadline else '-'}")
+    print(f"    Status:    {task.status.value}")
+    print(f"    Deadline:  {task.deadline if task.deadline else '-'}")
     print(f"    Description: {task.description}")
     print(f"    Created at:  {task.created_at}")
     print("-" * 60)
@@ -105,17 +109,18 @@ def run_cli() -> None:
                 break
             else:
                 print("Invalid menu option. Please try again.")
-        except DomainError as e:
+        except DomainError as error:
             # Known, user-facing errors (validation, not found, etc.)
-            print(f"[Error] {e}")
-        except Exception as e:  # pragma: no cover - debugging helper
-            print(f"[Unexpected error] {e}")
+            print(f"[Error] {error}")
+        except Exception as error:  # pragma: no cover - debugging helper
+            print(f"[Unexpected error] {error}")
 
 
 # ---------- Handlers for each menu action ----------
 
 
 def _handle_create_project(project_service: ProjectService) -> None:
+    """CLI flow for creating a new project."""
     name = _input_multiline("Enter project name:")
     description = _input_multiline("Enter project description:")
     project = project_service.create_project(name=name, description=description)
@@ -123,9 +128,11 @@ def _handle_create_project(project_service: ProjectService) -> None:
 
 
 def _handle_edit_project(project_service: ProjectService) -> None:
+    """CLI flow for editing an existing project."""
     project_id = int(input("Enter project id to edit: ").strip())
     new_name = _input_multiline("Enter new project name:")
     new_description = _input_multiline("Enter new project description:")
+
     project = project_service.edit_project(
         project_id=project_id,
         new_name=new_name,
@@ -135,16 +142,19 @@ def _handle_edit_project(project_service: ProjectService) -> None:
 
 
 def _handle_delete_project(project_service: ProjectService) -> None:
+    """CLI flow for deleting a project (with cascade delete)."""
     project_id = int(input("Enter project id to delete: ").strip())
     project_service.delete_project(project_id)
     print("✅ Project and all its tasks have been deleted (cascade delete).")
 
 
 def _handle_list_projects(project_service: ProjectService) -> None:
+    """CLI flow for listing all projects."""
     projects = project_service.list_projects()
     if not projects:
         print("There are no projects yet.")
         return
+
     print("\nProjects:")
     print("-" * 60)
     for project in projects:
@@ -152,6 +162,7 @@ def _handle_list_projects(project_service: ProjectService) -> None:
 
 
 def _handle_add_task(task_service: TaskService) -> None:
+    """CLI flow for adding a task to a project."""
     project_id = int(input("Enter project id: ").strip())
     title = _input_multiline("Enter task title:")
     description = _input_multiline("Enter task description:")
@@ -170,14 +181,17 @@ def _handle_add_task(task_service: TaskService) -> None:
 
 
 def _handle_change_task_status(task_service: TaskService) -> None:
+    """CLI flow for changing the status of a task."""
     project_id = int(input("Enter project id: ").strip())
     task_id = int(input("Enter task id: ").strip())
     new_status = input("New status (todo/doing/done): ").strip()
+
     task = task_service.change_task_status(project_id, task_id, new_status)
     print(f"✅ Task {task.id} status changed to '{task.status.value}'.")
 
 
 def _handle_edit_task(task_service: TaskService) -> None:
+    """CLI flow for editing a task."""
     project_id = int(input("Enter project id: ").strip())
     task_id = int(input("Enter task id: ").strip())
 
@@ -215,6 +229,7 @@ def _handle_edit_task(task_service: TaskService) -> None:
 
 
 def _handle_delete_task(task_service: TaskService) -> None:
+    """CLI flow for deleting a task from a project."""
     project_id = int(input("Enter project id: ").strip())
     task_id = int(input("Enter task id: ").strip())
     task_service.delete_task(project_id, task_id)
@@ -222,7 +237,9 @@ def _handle_delete_task(task_service: TaskService) -> None:
 
 
 def _handle_list_tasks(task_service: TaskService) -> None:
+    """CLI flow for listing all tasks of a project."""
     project_id = int(input("Enter project id: ").strip())
+
     try:
         tasks = task_service.list_tasks_for_project(project_id)
     except NotFoundError as exc:
