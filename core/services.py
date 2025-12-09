@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .config import get_settings
 from .exceptions import NotFoundError, ValidationError
 from .models import Project, Task, TaskStatus
 
+# Type-only import to avoid runtime circular dependencies:
+if TYPE_CHECKING:
+    from storage.memory_storage import InMemoryDatabase
 
-# Word-count limits are derived from the specification.
+
+# Word-count limits derived from the specification.
 MIN_PROJECT_NAME_WORDS = 30
 MIN_PROJECT_DESCRIPTION_WORDS = 150
 MIN_TASK_TITLE_WORDS = 30
@@ -21,38 +24,14 @@ def _word_count(text: str) -> int:
     return len(text.split())
 
 
-@dataclass
-class InMemoryDatabase:
-    """
-    Simple in-memory storage for projects and tasks.
-
-    In phase 1, there is no persistent storage. This class simulates
-    a repository that can later be swapped with a DB implementation.
-    """
-
-    projects: list[Project] = field(default_factory=list)
-    _project_id_seq: int = 0
-    _task_id_seq: int = 0
-
-    def next_project_id(self) -> int:
-        """Generate the next unique project ID."""
-        self._project_id_seq += 1
-        return self._project_id_seq
-
-    def next_task_id(self) -> int:
-        """Generate the next unique task ID."""
-        self._task_id_seq += 1
-        return self._task_id_seq
-
-
 class ProjectService:
     """
     Business logic for managing projects.
 
-    This layer should not know about CLI, HTTP, or storage details.
+    This layer should not know about CLI, HTTP, or concrete storage details.
     """
 
-    def __init__(self, db: InMemoryDatabase) -> None:
+    def __init__(self, db: "InMemoryDatabase") -> None:
         self._db = db
         self._settings = get_settings()
 
@@ -81,14 +60,15 @@ class ProjectService:
                 raise ValidationError("Project name must be unique.")
 
     def _validate_project_fields(self, name: str, description: str) -> None:
-        """Validate name and description according to word-count rules."""
+        """Validate project name and description according to word-count rules."""
         if _word_count(name) < MIN_PROJECT_NAME_WORDS:
             raise ValidationError(
                 f"Project name must contain at least {MIN_PROJECT_NAME_WORDS} words."
             )
+
         if _word_count(description) < MIN_PROJECT_DESCRIPTION_WORDS:
             raise ValidationError(
-                f"Project description must contain "
+                "Project description must contain "
                 f"at least {MIN_PROJECT_DESCRIPTION_WORDS} words."
             )
 
@@ -148,15 +128,13 @@ class ProjectService:
 
     def list_projects(self) -> list[Project]:
         """Return all projects sorted by creation time."""
-        return sorted(self._db.projects, key=lambda p: p.created_at)
+        return sorted(self._db.projects, key=lambda project: project.created_at)
 
 
 class TaskService:
-    """
-    Business logic for managing tasks within projects.
-    """
+    """Business logic for managing tasks within projects."""
 
-    def __init__(self, db: InMemoryDatabase) -> None:
+    def __init__(self, db: "InMemoryDatabase") -> None:
         self._db = db
         self._settings = get_settings()
 
@@ -169,7 +147,8 @@ class TaskService:
                 return project
         raise NotFoundError(f"Project with id {project_id} was not found.")
 
-    def _find_task(self, project: Project, task_id: int) -> Task:
+    @staticmethod
+    def _find_task(project: Project, task_id: int) -> Task:
         """Find a task within a project or raise NotFoundError."""
         for task in project.tasks:
             if task.id == task_id:
@@ -188,9 +167,10 @@ class TaskService:
             raise ValidationError(
                 f"Task title must contain at least {MIN_TASK_TITLE_WORDS} words."
             )
+
         if _word_count(description) < MIN_TASK_DESCRIPTION_WORDS:
             raise ValidationError(
-                f"Task description must contain "
+                "Task description must contain "
                 f"at least {MIN_TASK_DESCRIPTION_WORDS} words."
             )
 
@@ -227,7 +207,6 @@ class TaskService:
                 "Maximum number of tasks reached (TASK_OF_NUMBER_MAX)."
             )
 
-        # Default status is 'todo' when not specified.
         if status is None:
             status = "todo"
 
@@ -302,6 +281,7 @@ class TaskService:
         project = self._find_project(project_id)
         before = len(project.tasks)
         project.tasks = [task for task in project.tasks if task.id != task_id]
+
         if len(project.tasks) == before:
             raise NotFoundError(
                 f"Task with id {task_id} in this project was not found."
@@ -310,4 +290,4 @@ class TaskService:
     def list_tasks_for_project(self, project_id: int) -> list[Task]:
         """Return all tasks of a project sorted by creation time."""
         project = self._find_project(project_id)
-        return sorted(project.tasks, key=lambda t: t.created_at)
+        return sorted(project.tasks, key=lambda task: task.created_at)
